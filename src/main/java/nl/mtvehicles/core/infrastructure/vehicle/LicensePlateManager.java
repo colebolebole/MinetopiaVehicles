@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -53,7 +54,10 @@ public final class LicensePlateManager {
     private static final class Entry {
         final String license;
         ArmorStand skin;
-        ArmorStand plate;
+        Entity plate;
+        boolean display; // true = flat text display entity, false = name tag of an armor stand
+        double scale;
+        double rotation;
         boolean enabled;
         double x, y, z;
         String text;
@@ -107,7 +111,7 @@ public final class LicensePlateManager {
     }
 
     private static boolean isPlateStand(Entity entity) {
-        return entity instanceof ArmorStand && entity.getScoreboardTags().contains(PLATE_TAG);
+        return entity.getScoreboardTags().contains(PLATE_TAG);
     }
 
     // --- Settings ---
@@ -137,7 +141,7 @@ public final class LicensePlateManager {
             }
 
             double x = number(ConfigModule.defaultConfig.get(DefaultConfig.Option.LICENSE_PLATE_X), -1.2);
-            double y = number(ConfigModule.defaultConfig.get(DefaultConfig.Option.LICENSE_PLATE_Y), 0.45);
+            double y = number(ConfigModule.defaultConfig.get(DefaultConfig.Option.LICENSE_PLATE_Y), 0.6);
             double z = number(ConfigModule.defaultConfig.get(DefaultConfig.Option.LICENSE_PLATE_Z), 0.0);
 
             // Per-model overrides from vehicles.yml
@@ -155,13 +159,28 @@ public final class LicensePlateManager {
                 z = number(section.get("z"), z);
             }
 
-            Object format = ConfigModule.defaultConfig.get(DefaultConfig.Option.LICENSE_PLATE_FORMAT);
-            String formatString = format != null ? format.toString() : "&f&l%plate%";
+            // Style: a flat text display on the vehicle (1.19.4+), or a floating name tag (all versions)
+            final Object styleValue = ConfigModule.defaultConfig.get(DefaultConfig.Option.LICENSE_PLATE_STYLE);
+            final String style = styleValue != null ? styleValue.toString().toUpperCase(Locale.ROOT) : "AUTO";
+            final boolean display = !style.equals("NAME_TAG") && TextDisplays.isSupported();
+
+            double scale = number(ConfigModule.defaultConfig.get(DefaultConfig.Option.LICENSE_PLATE_SCALE), 0.45);
+            double rotation = number(ConfigModule.defaultConfig.get(DefaultConfig.Option.LICENSE_PLATE_ROTATION), 180.0);
+            if (override instanceof Map) {
+                scale = number(((Map<?, ?>) override).get("scale"), scale);
+                rotation = number(((Map<?, ?>) override).get("rotation"), rotation);
+            }
+
+            final Object format = ConfigModule.defaultConfig.get(display ? DefaultConfig.Option.LICENSE_PLATE_FORMAT : DefaultConfig.Option.LICENSE_PLATE_NAME_TAG_FORMAT);
+            final String formatString = format != null ? format.toString() : (display ? "&0&l%plate%" : "&f&l%plate%");
 
             entry.enabled = enabled;
+            entry.display = display;
             entry.x = x;
             entry.y = y;
             entry.z = z;
+            entry.scale = scale > 0 ? scale : 0.45;
+            entry.rotation = rotation;
             entry.text = TextUtils.colorize(formatString.replace("%plate%", entry.license));
         } catch (Exception e) {
             // Malformed vehicle data - simply don't show a plate (other parts of the plugin report such problems).
@@ -238,12 +257,13 @@ public final class LicensePlateManager {
 
             final Location target = getPlateLocation(skin.getLocation(), entry);
             if (entry.plate == null || !entry.plate.isValid()) {
-                entry.plate = spawnPlate(target, entry.text);
+                entry.plate = spawnPlate(target, entry);
                 continue;
             }
 
             final Location current = entry.plate.getLocation();
-            if (current.getWorld() != target.getWorld() || current.distanceSquared(target) > 1.0E-4) {
+            if (current.getWorld() != target.getWorld() || current.distanceSquared(target) > 1.0E-4
+                    || Math.abs(((current.getYaw() - target.getYaw()) % 360f + 540f) % 360f - 180f) > 0.01f) { // angular difference, so that 190 and -170 are equal
                 entry.plate.teleport(target);
             }
         }
@@ -259,16 +279,32 @@ public final class LicensePlateManager {
         final double forwardZ = Math.cos(yaw);
         final double x = skinLocation.getX() + forwardX * entry.x + entry.z * Math.cos(yaw);
         final double z = skinLocation.getZ() + forwardZ * entry.x + entry.z * Math.sin(yaw);
+        if (entry.display) {
+            // The text faces the same way as the display entity does: rotation 180 = text facing backwards (a plate at the back of the vehicle).
+            float yawDegrees = skinLocation.getYaw() + (float) entry.rotation;
+            return new Location(skinLocation.getWorld(), x, skinLocation.getY() + entry.y, z, yawDegrees, 0f);
+        }
         return new Location(skinLocation.getWorld(), x, skinLocation.getY() + entry.y - NAME_TAG_HEIGHT, z, skinLocation.getYaw(), 0f);
     }
 
-    private static ArmorStand spawnPlate(Location location, String text) {
+    private static Entity spawnPlate(Location location, Entry entry) {
+        if (entry.display) {
+            final Entity display = TextDisplays.spawn(location, entry.text, (float) entry.scale);
+            if (display != null) {
+                display.addScoreboardTag(PLATE_TAG);
+                return display;
+            }
+            // Could not create a text display (unexpected API differences) - re-read the settings, which now use name tags; the plate is created on the next tick.
+            loadSettings(entry);
+            return null;
+        }
+
         final ArmorStand plate = location.getWorld().spawn(location, ArmorStand.class);
         plate.setVisible(false);
         plate.setGravity(false);
         plate.setSmall(true);
         plate.setMarker(true); // no hitbox - cannot be clicked, punched or pushed
-        plate.setCustomName(text);
+        plate.setCustomName(entry.text);
         plate.setCustomNameVisible(true);
         plate.addScoreboardTag(PLATE_TAG);
         try {
@@ -281,6 +317,92 @@ public final class LicensePlateManager {
         } catch (NoSuchMethodError ignored) {
         }
         return plate;
+    }
+
+    /**
+     * Creates and configures text display entities (added in 1.19.4) using reflection, as the plugin is compiled against an older API.
+     */
+    private static final class TextDisplays {
+        private static final Class<?> TEXT_DISPLAY = find("org.bukkit.entity.TextDisplay");
+        private static boolean failed = false;
+
+        static boolean isSupported() {
+            return TEXT_DISPLAY != null && !failed;
+        }
+
+        private static Class<?> find(String name) {
+            try {
+                return Class.forName(name);
+            } catch (ClassNotFoundException | LinkageError e) {
+                return null;
+            }
+        }
+
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        static Entity spawn(Location location, String text, float scale) {
+            if (!isSupported()) return null;
+            Entity entity = null;
+            try {
+                entity = location.getWorld().spawn(location, (Class<? extends Entity>) TEXT_DISPLAY);
+
+                // Fixed orientation: the text stays on the vehicle instead of turning towards the viewer
+                final Class<?> billboard = Class.forName("org.bukkit.entity.Display$Billboard");
+                invoke(entity, "setBillboard", billboard, Enum.valueOf((Class<Enum>) billboard, "FIXED"));
+
+                // Scale of the text
+                final Class<?> vector3f = Class.forName("org.joml.Vector3f");
+                final Class<?> quaternionf = Class.forName("org.joml.Quaternionf");
+                final Object translation = vector3f.getConstructor(float.class, float.class, float.class).newInstance(0f, 0f, 0f);
+                final Object scaleVector = vector3f.getConstructor(float.class, float.class, float.class).newInstance(scale, scale, scale);
+                final Object leftRotation = quaternionf.getConstructor().newInstance();
+                final Object rightRotation = quaternionf.getConstructor().newInstance();
+                final Class<?> transformation = Class.forName("org.bukkit.util.Transformation");
+                final Object transform = transformation.getConstructor(vector3f, quaternionf, vector3f, quaternionf)
+                        .newInstance(translation, leftRotation, scaleVector, rightRotation);
+                invoke(entity, "setTransformation", transformation, transform);
+
+                invoke(entity, "setText", String.class, text);
+                tryInvoke(entity, "setLineWidth", int.class, 1000); // never wrap long plates
+                tryInvoke(entity, "setDefaultBackground", boolean.class, false);
+                try {
+                    final Object transparent = org.bukkit.Color.class.getMethod("fromARGB", int.class, int.class, int.class, int.class).invoke(null, 0, 0, 0, 0);
+                    invoke(entity, "setBackgroundColor", org.bukkit.Color.class, transparent); // transparent - the text is "printed" on the plate
+                } catch (Exception ignored) {
+                }
+                tryInvoke(entity, "setShadowed", boolean.class, false);
+                tryInvoke(entity, "setSeeThrough", boolean.class, false);
+                tryInvoke(entity, "setViewRange", float.class, 0.3f);
+
+                try {
+                    invoke(entity, "setTeleportDuration", int.class, 1); // smooth movement (1.20.2+)
+                } catch (NoSuchMethodException ignored) {
+                }
+
+                entity.setGravity(false);
+                entity.setPersistent(false); // never saved with the chunk - re-created when the vehicle loads
+                entity.setInvulnerable(true);
+                return entity;
+            } catch (Exception | LinkageError e) {
+                if (entity != null) entity.remove();
+                if (!failed) {
+                    failed = true;
+                    Main.logWarning("Could not create text display license plates (" + e + "). Using name tags instead.");
+                }
+                return null;
+            }
+        }
+
+        private static void invoke(Object target, String method, Class<?> parameterType, Object argument) throws Exception {
+            TEXT_DISPLAY.getMethod(method, parameterType).invoke(target, argument);
+        }
+
+        /** For cosmetic settings: if one is not available, the plate is still created. */
+        private static void tryInvoke(Object target, String method, Class<?> parameterType, Object argument) {
+            try {
+                invoke(target, method, parameterType, argument);
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     private static void removePlate(Entry entry) {

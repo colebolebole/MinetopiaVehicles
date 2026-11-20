@@ -212,13 +212,14 @@ slipperyIce: false
 
 # --- License plates ---
 
-# Show the vehicle's license plate as text on the vehicle (where the license plate would be).
-# The plate is a floating text which follows the vehicle (an invisible armor stand with a visible name).
+# Show the vehicle's license plate as text on the vehicle (on the plate of the model).
 # A vehicle model in vehicles.yml may override these settings with its own section, for example:
 #   licensePlate:
 #     x: -1.4
 #     y: 0.5
 #     z: 0.0
+#     scale: 0.4
+#     rotation: 180
 # ... or disable the plate for the model with 'licensePlate: false'.
 licensePlate:
   enabled: true
@@ -227,11 +228,26 @@ licensePlate:
   vehicleTypes:
     - CAR
 
-  # The text shown on the plate. %plate% is replaced by the license plate. Colour codes using '&' are supported.
-  format: "&f&l%plate%"
+  # How the plate is shown:
+  #  DISPLAY  - flat text fixed on the vehicle (turns with it, like printed on the plate). Needs Minecraft 1.19.4 or newer.
+  #  NAME_TAG - floating text which always faces the viewer (works on all versions).
+  #  AUTO     - DISPLAY if the server supports it, NAME_TAG otherwise.
+  style: AUTO
 
-  # Position of the plate relative to the vehicle's centre (the same orientation as seats in vehicles.yml):
-  # x = forwards (+) / backwards (-), y = height, z = sideways. The text is always readable from any direction.
+  # The text shown on the plate. %plate% is replaced by the license plate. Colour codes using '&' are supported.
+  format: "&0&l%plate%"
+  # The same for the NAME_TAG style (it has a dark background, so a light colour is better).
+  nameTagFormat: "&f&l%plate%"
+
+  # Position of the plate's centre relative to the vehicle's centre (the same orientation as seats in vehicles.yml):
+  # x = forwards (+) / backwards (-), y = height, z = sideways.
+  # Tip: change the values and reload the plugin, until the text sits right on the plate.
+  # If the text is hidden "inside" the vehicle, move it a bit outwards (a larger |x|).
   x: -1.2
-  y: 0.45
+  y: 0.6
   z: 0.0
+
+  # DISPLAY style only: size of the text (1.0 = normal size) and the direction the text faces, in degrees relative to the vehicle:
+  # 180 = backwards (a plate at the back), 0 = forwards (a plate at the front).
+  scale: 0.45
+  rotation: 180
