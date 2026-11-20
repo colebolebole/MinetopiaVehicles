@@ -208,3 +208,30 @@ usePlayerFacing: false
 # Makes vehicles significantly harder to control on ice.
 # Increases speed and rotation speed, as well as reduces friction on ice.
 slipperyIce: false
+
+
+# --- License plates ---
+
+# Show the vehicle's license plate as text on the vehicle (where the license plate would be).
+# The plate is a floating text which follows the vehicle (an invisible armor stand with a visible name).
+# A vehicle model in vehicles.yml may override these settings with its own section, for example:
+#   licensePlate:
+#     x: -1.4
+#     y: 0.5
+#     z: 0.0
+# ... or disable the plate for the model with 'licensePlate: false'.
+licensePlate:
+  enabled: true
+
+  # Which vehicle types get a license plate. Available: CAR, HOVER, TANK, HELICOPTER, AIRPLANE, BOAT.
+  vehicleTypes:
+    - CAR
+
+  # The text shown on the plate. %plate% is replaced by the license plate. Colour codes using '&' are supported.
+  format: "&f&l%plate%"
+
+  # Position of the plate relative to the vehicle's centre (the same orientation as seats in vehicles.yml):
+  # x = forwards (+) / backwards (-), y = height, z = sideways. The text is always readable from any direction.
+  x: -1.2
+  y: 0.45
+  z: 0.0

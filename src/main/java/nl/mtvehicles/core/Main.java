@@ -3,6 +3,7 @@ package nl.mtvehicles.core;
 import nl.mtvehicles.core.infrastructure.dataconfig.DefaultConfig;
 import nl.mtvehicles.core.infrastructure.enums.SoftDependency;
 import nl.mtvehicles.core.infrastructure.modules.*;
+import nl.mtvehicles.core.infrastructure.vehicle.LicensePlateManager;
 import nl.mtvehicles.core.infrastructure.utils.PluginUpdater;
 import org.bukkit.Bukkit;
 import org.bukkit.event.Listener;
@@ -64,6 +65,8 @@ public class Main extends JavaPlugin {
         new ConfigModule();
         configsLoaded = true;
 
+        LicensePlateManager.start();
+
         if ((boolean) ConfigModule.defaultConfig.get(DefaultConfig.Option.AUTO_UPDATE)) PluginUpdater.checkNewVersion(getServer().getConsoleSender());
     }
 
@@ -74,6 +77,7 @@ public class Main extends JavaPlugin {
 
     @Override
     public void onDisable(){
+        LicensePlateManager.stop();
         // If the plugin was disabled before the configs were loaded, there is nothing to save (and touching ConfigModule would initialise it while the plugin is already disabled).
         if (configsLoaded) ConfigModule.vehicleDataConfig.saveToDisk();
         if (DependencyModule.isDependencyEnabled(SoftDependency.PLACEHOLDER_API) && DependencyModule.placeholderAPI != null) DependencyModule.placeholderAPI.unregisterOnDisable();

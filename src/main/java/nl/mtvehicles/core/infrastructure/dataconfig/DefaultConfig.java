@@ -362,7 +362,13 @@ public class DefaultConfig extends MTVConfig {
         REGION_ACTIONS_ENTER("regionActions.enter", "disabled"),
         REGION_ACTIONS_PICKUP("regionActions.pickup", "disabled"),
         REGION_ACTIONS_RIDE("regionActions.ride", "disabled"),
-        USE_PLAYER_FACING("usePlayerFacing", false);
+        USE_PLAYER_FACING("usePlayerFacing", false),
+        LICENSE_PLATE_ENABLED("licensePlate.enabled", true),
+        LICENSE_PLATE_VEHICLE_TYPES("licensePlate.vehicleTypes", new ArrayList<>(Collections.singletonList("CAR"))),
+        LICENSE_PLATE_FORMAT("licensePlate.format", "&f&l%plate%"),
+        LICENSE_PLATE_X("licensePlate.x", -1.2),
+        LICENSE_PLATE_Y("licensePlate.y", 0.45),
+        LICENSE_PLATE_Z("licensePlate.z", 0.0);
 
         final private String path;
         final private Object defaultValue;

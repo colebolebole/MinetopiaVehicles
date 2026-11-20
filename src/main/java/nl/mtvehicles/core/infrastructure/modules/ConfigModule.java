@@ -5,6 +5,7 @@ import lombok.Setter;
 import nl.mtvehicles.core.Main;
 import nl.mtvehicles.core.infrastructure.dataconfig.*;
 import nl.mtvehicles.core.infrastructure.models.MTVConfig;
+import nl.mtvehicles.core.infrastructure.vehicle.LicensePlateManager;
 
 import java.io.File;
 import java.text.SimpleDateFormat;
@@ -87,6 +88,7 @@ public class ConfigModule {
      */
     public static void reloadConfigs(){
         configList.forEach(MTVConfig::reload);
+        LicensePlateManager.refresh(); // pick up changed license plate settings
         if (!messagesConfig.setLanguageFile(secretSettings.getMessagesLanguage())){
             Main.instance.getLogger().severe("Messages.yml for your desired language could not be found. Disabling the plugin...");
             Main.disablePlugin();
